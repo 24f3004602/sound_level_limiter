@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 import time
+import sys
 from collections import defaultdict, deque
 from pathlib import Path
 from typing import Optional
@@ -24,11 +25,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from environment.sound_env import ACTION_MAP, SoundLimiterEnv, SoundObservation
-from environment.tasks import ALL_TASKS, TASKS_BY_ID, grade_task
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+try:
+    from environment.sound_env import ACTION_MAP, SoundLimiterEnv, SoundObservation
+    from environment.tasks import ALL_TASKS, TASKS_BY_ID, grade_task
+except ModuleNotFoundError as exc:
+    if exc.name != "environment":
+        raise
+    # Allow direct execution: python server/app.py
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
+    from environment.sound_env import ACTION_MAP, SoundLimiterEnv, SoundObservation
+    from environment.tasks import ALL_TASKS, TASKS_BY_ID, grade_task
+
+
 load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 
@@ -401,7 +412,7 @@ def main() -> None:
     import uvicorn
 
     host = os.environ.get("HOST", "0.0.0.0")
-    port = int(os.environ.get("PORT", 7860))
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host=host, port=port)
 
 
