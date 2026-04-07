@@ -8,16 +8,18 @@ acoustic management system used in conference rooms.
 """
 
 import numpy as np
-import random
 from typing import Optional
 from pydantic import BaseModel, Field
+from openenv.core import Action as OpenEnvAction
+from openenv.core import Observation as OpenEnvObservation
+from openenv.core import State as OpenEnvState
 
 
 # ══════════════════════════════════════════════════════════
 # Typed Models (OpenEnv spec requires Pydantic models)
 # ══════════════════════════════════════════════════════════
 
-class SoundObservation(BaseModel):
+class SoundObservation(OpenEnvObservation):
     """What the agent can observe about the environment."""
     sound_level:    float = Field(..., ge=0.0, le=100.0, description="Current sound level in dB (0–100)")
     gain:           float = Field(..., ge=0.0, le=1.0,   description="Current gain setting (0=muted, 1=full)")
@@ -27,7 +29,7 @@ class SoundObservation(BaseModel):
     loud_streak:    int   = Field(..., ge=0,              description="Consecutive steps above 95 dB (danger)")
 
 
-class SoundAction(BaseModel):
+class SoundAction(OpenEnvAction):
     """An action the agent can take."""
     action_id:   int = Field(..., ge=0, le=3, description="0=do_nothing, 1=warn, 2=reduce_gain, 3=mute")
     action_name: str = Field(...,             description="Human-readable action name")
@@ -38,6 +40,17 @@ class SoundReward(BaseModel):
     value:       float = Field(..., description="Reward value for this step")
     reason:      str   = Field(..., description="Why this reward was given")
     in_safe_zone: bool = Field(..., description="Whether sound is in the 40–70 dB safe zone")
+
+
+class SoundState(OpenEnvState):
+    """Internal state model compatible with OpenEnv state typing."""
+    sound_level: float = Field(..., ge=0.0, le=100.0, description="Current sound level in dB (0–100)")
+    gain: float = Field(..., ge=0.0, le=1.0, description="Current gain setting (0=muted, 1=full)")
+    loud_streak: int = Field(..., ge=0, description="Consecutive steps above 95 dB (danger)")
+    above_safe: bool = Field(..., description="True if sound is above 70 dB")
+    below_safe: bool = Field(..., description="True if sound is below 40 dB")
+    in_safe_zone: bool = Field(..., description="True if sound is in the safe 40–70 dB band")
+    max_steps: int = Field(..., ge=1, description="Maximum steps allowed in an episode")
 
 
 # ══════════════════════════════════════════════════════════
@@ -171,28 +184,29 @@ class SoundLimiterEnv:
 
     def state(self) -> dict:
         """Return current environment state as a plain dict (OpenEnv spec)."""
-        return {
+        state = SoundState.model_validate({
             "sound_level": round(self.sound_level, 2),
-            "gain":        round(self.gain, 3),
-            "step_count":  self.step_count,
+            "gain": round(self.gain, 3),
+            "step_count": self.step_count,
             "loud_streak": self.loud_streak,
-            "above_safe":  self.sound_level > SAFE_MAX,
-            "below_safe":  self.sound_level < SAFE_MIN,
+            "above_safe": self.sound_level > SAFE_MAX,
+            "below_safe": self.sound_level < SAFE_MIN,
             "in_safe_zone": SAFE_MIN <= self.sound_level <= SAFE_MAX,
-            "max_steps":   self.max_steps,
-        }
+            "max_steps": self.max_steps,
+        })
+        return state.model_dump()
 
     # ── Internal helpers ────────────────────────────────────
 
     def _make_observation(self) -> SoundObservation:
-        return SoundObservation(
-            sound_level  = round(self.sound_level, 2),
-            gain         = round(self.gain, 3),
-            step_count   = self.step_count,
-            above_safe   = self.sound_level > SAFE_MAX,
-            below_safe   = self.sound_level < SAFE_MIN,
-            loud_streak  = self.loud_streak,
-        )
+        return SoundObservation.model_validate({
+            "sound_level": round(self.sound_level, 2),
+            "gain": round(self.gain, 3),
+            "step_count": self.step_count,
+            "above_safe": self.sound_level > SAFE_MAX,
+            "below_safe": self.sound_level < SAFE_MIN,
+            "loud_streak": self.loud_streak,
+        })
 
     def _compute_reward(self) -> SoundReward:
         s = self.sound_level

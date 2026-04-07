@@ -1,0 +1,140 @@
+# openenv.yaml
+# OpenEnv Environment Specification
+# Validated by: openenv validate
+
+name:        sound-limiter-env
+version:     "1.0.0"
+description: >
+  A meeting room sound level limiter environment.
+  The agent monitors simulated decibel levels and takes
+  actions (warn, reduce_gain, mute, do_nothing) to keep
+  sound within the safe zone of 40–70 dB.
+  Simulates real-world acoustic management systems used in
+  conference rooms, lecture halls, and event spaces.
+
+author:      ASTARR
+license:     MIT
+
+tags:
+  - openenv
+  - real-world
+  - acoustic-management
+  - discrete-control
+  - meeting-room
+
+environment:
+  type:     discrete
+  api_base: http://localhost:7860
+
+  observation_space:
+    type:   Box
+    fields:
+      sound_level:
+        type:        float
+        range:       [0.0, 100.0]
+        description: Current sound level in decibels
+      gain:
+        type:        float
+        range:       [0.0, 1.0]
+        description: Current gain setting (0=muted, 1=full)
+      step_count:
+        type:        int
+        range:       [0, 50]
+        description: Steps elapsed in this episode
+      above_safe:
+        type:        bool
+        description: True if sound_level > 70 dB
+      below_safe:
+        type:        bool
+        description: True if sound_level < 40 dB
+      loud_streak:
+        type:        int
+        range:       [0, 50]
+        description: Consecutive steps with sound > 95 dB
+
+  action_space:
+    type: Discrete
+    n:    4
+    actions:
+      - id:     0
+        name:   do_nothing
+        effect: No intervention; room drifts louder naturally
+      - id:     1
+        name:   warn
+        effect: Gentle nudge, reduces sound by ~3 dB
+      - id:     2
+        name:   reduce_gain
+        effect: Reduces gain by 0.1, drops sound by ~5 dB
+      - id:     3
+        name:   mute
+        effect: Hard mute — gain to 0, sound drops to ~10%
+
+  reward:
+    range:       [-2.0, 1.0]
+    description: >
+      +1.0  if 40 ≤ sound_level ≤ 70 dB (safe zone)
+      -0.5  if 20 ≤ sound_level < 40 dB (over-muted)
+      -0.5  if 70 < sound_level ≤ 85 dB (slightly loud)
+      -2.0  if sound_level > 85 dB (dangerously loud)
+    partial_progress: true
+    sparse:           false
+
+  episode:
+    max_steps:       50
+    termination:     "3 consecutive steps with sound_level > 95 dB"
+    truncation:      "step_count >= max_steps"
+
+tasks:
+  - id:          task_easy
+    name:        Quiet the Room
+    difficulty:  easy
+    description: >
+      Sound starts at 75 dB with low noise (std=1.5).
+      Keep it in the safe zone for ≥60% of 30 steps.
+    initial_sound:       75.0
+    noise_std:           1.5
+    max_steps:           30
+    success_threshold:   0.60
+    grader_endpoint:     POST /tasks/task_easy/grade
+
+  - id:          task_medium
+    name:        Manage Noisy Meeting
+    difficulty:  medium
+    description: >
+      Sound starts at 85 dB with moderate noise (std=4.0).
+      Keep it safe for ≥50% of 40 steps. Avoid over-muting.
+    initial_sound:       85.0
+    noise_std:           4.0
+    max_steps:           40
+    success_threshold:   0.50
+    grader_endpoint:     POST /tasks/task_medium/grade
+
+  - id:          task_hard
+    name:        Control Loud Event
+    difficulty:  hard
+    description: >
+      Sound starts at 92 dB with heavy noise (std=7.0).
+      Keep it safe for ≥40% of 50 steps. Muting is blunt;
+      graduated responses are required.
+    initial_sound:       92.0
+    noise_std:           7.0
+    max_steps:           50
+    success_threshold:   0.40
+    grader_endpoint:     POST /tasks/task_hard/grade
+
+endpoints:
+  reset:  POST /reset
+  step:   POST /step
+  state:  GET  /state
+  tasks:  GET  /tasks
+  health: GET  /health
+
+inference:
+  script:          inference.py
+  runtime_limit:   1200   # 20 minutes in seconds
+  reproducible:    true
+  seed:            42
+  required_env_vars:
+    - API_BASE_URL
+    - MODEL_NAME
+    - HF_TOKEN

@@ -11,8 +11,15 @@ It's here to: (a) verify the env works, (b) show learning progress,
 import numpy as np
 import pickle
 import os
-import environment.sound_env
-from environment.sound_env import SoundLimiterEnv, ACTION_MAP
+import sys
+from pathlib import Path
+
+# Allow running this file directly: python agent/q_agent.py
+if __package__ in (None, ""):
+    project_root = Path(__file__).resolve().parents[1]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+from environment.sound_env import SoundLimiterEnv
 
 
 class QLearningAgent:
@@ -52,12 +59,40 @@ class QLearningAgent:
         gain_bin  = int(np.clip(g / 0.2, 0, self.N_GAIN_BINS - 1))
         return sound_bin, gain_bin
 
+    def _stability_guard(self, obs_dict: dict, action: int) -> int:
+        """Keep policy robust against hard-task noise spikes and over-muting."""
+        sl = float(obs_dict.get("sound_level", 60.0))
+        gain = float(obs_dict.get("gain", 1.0))
+
+        # Never hard-mute unless absolutely necessary.
+        if action == 3:
+            action = 2 if (sl > 92 and gain > 0.25) else 1
+
+        # Keep gain from collapsing too low in easy/medium episodes.
+        if sl < 42 and action in (1, 2, 3):
+            return 0
+
+        # Avoid repeated reduce_gain when gain is already low.
+        if gain < 0.20 and sl < 80 and action == 2:
+            return 1 if sl > 70 else 0
+
+        # Emergency handling for loud spikes.
+        if sl > 92:
+            return 2 if gain > 0.20 else 1
+        if sl > 78 and action in (0, 1):
+            return 2 if gain > 0.35 else 1
+        if sl > 70 and action == 0:
+            return 1
+
+        return action
+
     def choose_action(self, obs_dict: dict) -> int:
         """Epsilon-greedy policy."""
         if np.random.random() < self.epsilon:
             return np.random.randint(self.N_ACTIONS)
         sb, gb = self._discretize(obs_dict)
-        return int(np.argmax(self.q_table[sb, gb]))
+        action = int(np.argmax(self.q_table[sb, gb]))
+        return self._stability_guard(obs_dict, action)
 
     def learn(
         self,
@@ -89,6 +124,9 @@ class QLearningAgent:
             return False
         with open(path, "rb") as f:
             data = pickle.load(f)
-        self.q_table = data["q_table"]
+        loaded = data["q_table"]
+        if loaded.shape != self.q_table.shape:
+            return False
+        self.q_table = loaded
         self.epsilon = data.get("epsilon", self.epsilon_min)
         return True

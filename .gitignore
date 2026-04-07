@@ -1,0 +1,60 @@
+# Python cache and virtual envs
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.venv/
+venv/
+
+# Test and type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+
+# Local tooling and editor files
+.qodo/
+.vscode/
+.idea/
+
+# Build, coverage, and logs
+build/
+dist/
+htmlcov/
+.coverage
+coverage.xml
+*.log
+
+# Local runtime artifacts
+q_table.pkl
+training_progress.png
+
+# Environment files
+.env
+.env.*
+
+# Secrets and credentials
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+credentials.json
+secrets.json
+token.txt
+
+# Local caches and temporary files
+.cache/
+.huggingface/
+.ipynb_checkpoints/
+tmp/
+temp/
+*.tmp
+Thumbs.db
+.DS_Store
+
+# Local lockfile not required for pip-based deploy
+uv.lock

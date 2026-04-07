@@ -11,7 +11,11 @@ Each task defines:
 import numpy as np
 from typing import Optional
 from pydantic import BaseModel, Field
-from sound_env import SoundLimiterEnv, ACTION_MAP
+
+try:
+    from .sound_env import SoundLimiterEnv, ACTION_MAP
+except ImportError:
+    from sound_env import SoundLimiterEnv, ACTION_MAP
 
 
 # ══════════════════════════════════════════════════════════
