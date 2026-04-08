@@ -1,3 +1,14 @@
+---
+title: Sound Level Limiter
+emoji: "🎯"
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+---
+
 # Sound Limiter RL Environment
 
 An OpenEnv-compatible reinforcement learning environment where an agent manages meeting-room sound levels and keeps dB in a safe range.
@@ -33,7 +44,7 @@ Both `inference.py` and `server/app.py` auto-load values from `.env`.
 ## Run API server
 
 ```powershell
-python server.py
+python app.py
 ```
 
 Or with Uvicorn:
