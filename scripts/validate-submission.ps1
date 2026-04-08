@@ -51,6 +51,7 @@ try {
         ContentType = "application/json"
         Body = "{}"
         TimeoutSec = 30
+        UseBasicParsing = $true
     }
     $response = Invoke-WebRequest @invokeParams
 

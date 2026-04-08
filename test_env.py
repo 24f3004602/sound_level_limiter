@@ -25,9 +25,17 @@ def test_environment() -> None:
     for action in range(4):
         obs2, reward, done, _ = env.step(action)
         assert isinstance(reward, SoundReward), "step() reward must be SoundReward"
-        assert reward.value in (-2.0, -0.5, 1.0), f"Unexpected reward: {reward.value}"
+        assert -2.0 <= reward.value <= 1.25, f"Reward out of expected range: {reward.value}"
         assert isinstance(done, bool)
-        print(f"  step(action={action}) -> reward={reward.value:+.1f}, sound={obs2.sound_level:.1f} dB [PASS]")
+        print(f"  step(action={action}) -> reward={reward.value:+.4f}, sound={obs2.sound_level:.1f} dB [PASS]")
+
+    # Smooth reward shaping should penalize farther-from-safe states more.
+    env.sound_level = 71.0
+    near_safe = env._compute_reward().value
+    env.sound_level = 84.0
+    far_from_safe = env._compute_reward().value
+    assert near_safe > far_from_safe, "Reward shaping should provide a usable gradient"
+    print("  reward_gradient_check [PASS]")
 
     state = env.state()
     assert "sound_level" in state, "state() must contain sound_level"

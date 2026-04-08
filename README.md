@@ -90,6 +90,18 @@ python train.py
 
 Default mode trains a PyTorch DQN baseline and creates `dqn_model.pt`.
 
+Training now tracks both exploration-phase and deterministic evaluation metrics:
+
+- Episode reward (raw + moving average)
+- Training success rate (fraction of episodes that meet each sampled task threshold)
+- Periodic deterministic evaluation (`epsilon=0`) across easy/medium/hard tasks
+- Per-task score trend over time
+
+Artifacts written after training:
+
+- `training_progress.png`: reward + success/score learning curves
+- `training_metrics.json`: full metric history for analysis
+
 To force tabular Q-learning:
 
 ```powershell
@@ -97,7 +109,16 @@ $env:BASELINE_ALGO = "q_table"
 python train.py
 ```
 
-Training always writes `training_progress.png`.
+Useful overrides:
+
+```powershell
+$env:TRAIN_EPISODES = "1200"
+$env:RENDER_EVERY = "100"
+$env:EVAL_EVERY = "100"
+$env:EVAL_EPISODES = "8"
+$env:TRAIN_SEED = "42"
+python train.py
+```
 
 ## Run inference
 
