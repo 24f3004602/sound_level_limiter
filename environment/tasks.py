@@ -1,11 +1,3 @@
-"""
-environment/tasks.py
-Task definitions, registry, and graders for easy -> medium -> hard benchmarks.
-
-The registry supports static defaults plus runtime task registration for API-based
-parameter sweeps.
-"""
-
 import threading
 from typing import Optional
 
@@ -19,8 +11,6 @@ except ImportError:
 
 
 class TaskConfig(BaseModel):
-    """Configuration for a single task."""
-
     id: str
     name: str
     description: str
@@ -87,7 +77,6 @@ TASK_HARD = TaskConfig(
 DEFAULT_TASKS: list[TaskConfig] = [TASK_EASY, TASK_MEDIUM, TASK_HARD]
 _TASK_LOCK = threading.RLock()
 
-# Backward-compatible globals; these are kept in sync by registry functions.
 ALL_TASKS: list[TaskConfig] = [task.model_copy(deep=True) for task in DEFAULT_TASKS]
 TASKS_BY_ID: dict[str, TaskConfig] = {task.id: task for task in ALL_TASKS}
 
@@ -120,26 +109,17 @@ def _normalize_task(task: TaskConfig) -> TaskConfig:
 
 
 def list_tasks() -> list[TaskConfig]:
-    """Return all currently registered tasks as copies."""
     with _TASK_LOCK:
         return [task.model_copy(deep=True) for task in ALL_TASKS]
 
 
 def get_task(task_id: str) -> Optional[TaskConfig]:
-    """Fetch one task by id."""
     with _TASK_LOCK:
         task = TASKS_BY_ID.get(task_id)
         return task.model_copy(deep=True) if task else None
 
 
 def register_task(task: TaskConfig, overwrite: bool = False) -> TaskConfig:
-    """
-    Register or update a task in the runtime registry.
-
-    Args:
-        task: TaskConfig to register.
-        overwrite: If False, duplicate ids are rejected.
-    """
     normalized = _normalize_task(task)
 
     with _TASK_LOCK:
@@ -178,15 +158,6 @@ def grade_task(
     n_episodes: int = 5,
     seed: int = 42,
 ) -> GradeResult:
-    """
-    Grade an agent on a task.
-
-    Args:
-        task: TaskConfig to run.
-        agent_fn: Callable(obs_dict) -> action_id in [0, 3].
-        n_episodes: Number of episodes to average.
-        seed: Fixed seed for reproducibility.
-    """
     rng = np.random.default_rng(seed)
     episode_scores = []
     episode_rewards = []
@@ -222,12 +193,9 @@ def grade_task(
     avg_safe = float(np.mean(episode_scores))
     avg_rew = float(np.mean(episode_rewards))
 
-    # Primary score is safe-zone occupancy.
     base_score = avg_safe
     difficulty_weight = _difficulty_weight(task.difficulty)
 
-    # Margin above threshold earns a smooth bonus; misses incur a stronger
-    # difficulty-weighted penalty so hard-task failures count more.
     margin = avg_safe - task.success_threshold
     if margin >= 0.0:
         consistency_bonus = min(0.25, (0.35 + 0.10 * (difficulty_weight - 1.0)) * margin)
@@ -263,7 +231,6 @@ def grade_task(
 
 
 def grade_all_tasks(agent_fn, n_episodes: int = 5) -> dict[str, GradeResult]:
-    """Grade an agent on all currently registered tasks."""
     results: dict[str, GradeResult] = {}
     weighted_scores: list[float] = []
     weighted_passes: list[float] = []

@@ -1,5 +1,3 @@
-"""Compatibility launcher for starting the FastAPI app from repo root."""
-
 from server import main
 
 

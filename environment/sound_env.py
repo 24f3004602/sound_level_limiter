@@ -1,11 +1,3 @@
-"""
-environment/sound_env.py
-Meeting Room Sound Level Limiter - Core RL Environment
-
-This environment models multiple independent sound sources and combines them
-with acoustic power summation to produce the room-level dB observation.
-"""
-
 from typing import Optional
 
 import numpy as np
@@ -16,8 +8,6 @@ from pydantic import BaseModel, Field
 
 
 class SoundObservation(OpenEnvObservation):
-    """What the agent can observe about the environment."""
-
     sound_level: float = Field(..., ge=0.0, le=100.0)
     gain: float = Field(..., ge=0.0, le=1.0)
     step_count: int = Field(..., ge=0)
@@ -26,7 +16,6 @@ class SoundObservation(OpenEnvObservation):
     loud_streak: int = Field(..., ge=0)
     source_levels: list[float] = Field(..., description="dB level of each of the 3 sound sources")
 
-    # Optional rich features for agents that want additional signal.
     bass_level: float = Field(default=0.0, ge=0.0, le=100.0)
     mid_level: float = Field(default=0.0, ge=0.0, le=100.0)
     treble_level: float = Field(default=0.0, ge=0.0, le=100.0)
@@ -34,23 +23,17 @@ class SoundObservation(OpenEnvObservation):
 
 
 class SoundAction(OpenEnvAction):
-    """An action the agent can take."""
-
     action_id: int = Field(..., ge=0, le=3, description="0=do_nothing, 1=warn, 2=reduce_gain, 3=mute")
     action_name: str = Field(..., description="Human-readable action name")
 
 
 class SoundReward(BaseModel):
-    """Reward signal with explanation."""
-
     value: float = Field(..., description="Reward value for this step")
     reason: str = Field(..., description="Why this reward was given")
     in_safe_zone: bool = Field(..., description="Whether sound is in the 40-70 dB safe zone")
 
 
 class SoundState(OpenEnvState):
-    """Internal state model compatible with OpenEnv state typing."""
-
     sound_level: float = Field(..., ge=0.0, le=100.0)
     gain: float = Field(..., ge=0.0, le=1.0)
     step_count: int = Field(default=0, ge=0)
@@ -80,15 +63,6 @@ MAX_STEPS = 50
 
 
 class SoundLimiterEnv:
-    """
-    Meeting Room Sound Level Limiter RL Environment.
-
-    State:   [sound_level, gain, step_count, above_safe, below_safe, loud_streak, source_levels]
-    Actions: do_nothing (0), warn (1), reduce_gain (2), mute (3)
-    Reward:  smooth distance-shaped around the safe band with safe-streak bonus
-    Done:    after max_steps or 3 consecutive steps above 95 dB
-    """
-
     def __init__(
         self,
         initial_sound: Optional[float] = None,
@@ -119,7 +93,6 @@ class SoundLimiterEnv:
         self.reset(seed=seed)
 
     def reset(self, seed: Optional[int] = None) -> SoundObservation:
-        """Reset the environment and return the initial observation."""
         if seed is not None:
             self.rng = np.random.default_rng(seed)
 
@@ -149,17 +122,14 @@ class SoundLimiterEnv:
         return self._make_observation()
 
     def _mix_sources(self) -> float:
-        """Combine source levels using acoustic power summation (dB -> linear -> sum -> dB)."""
         linear = [10 ** (s / 10.0) for s in self.source_levels]
         total_power = sum(linear) * max(self.gain, 0.0)
         return float(10.0 * np.log10(total_power + 1e-9))
 
     def step(self, action_id: int) -> tuple[SoundObservation, SoundReward, bool, dict]:
-        """Take one step in the environment."""
         if action_id not in ACTION_MAP:
             raise ValueError(f"Invalid action {action_id}. Must be 0-3.")
 
-        # Apply action to each source independently.
         if action_id == 1:  # warn
             self.source_levels = [max(0.0, s - 2.0) for s in self.source_levels]
         elif action_id == 2:  # reduce_gain
@@ -169,14 +139,12 @@ class SoundLimiterEnv:
             self.gain = 0.0
             self.source_levels = [s * 0.1 for s in self.source_levels]
 
-        # Natural drift per source.
         for i in range(self.n_sources):
             noise = float(self.rng.normal(0.0, self.noise_std))
             self.source_levels[i] = float(np.clip(self.source_levels[i] + noise, 0.0, 100.0))
 
         mixed_now = self._mix_sources()
 
-        # Room impulse carry-over: muting does not instantly remove room energy.
         self._room_tail_db = (0.7 * self._room_tail_db) + (0.3 * mixed_now)
         self.sound_level = float(np.clip((0.85 * mixed_now) + (0.15 * self._room_tail_db), 0.0, 100.0))
         self._update_band_features()
@@ -212,7 +180,6 @@ class SoundLimiterEnv:
         return obs, reward, done, info
 
     def state(self) -> dict:
-        """Return current environment state as a plain dict."""
         state = SoundState.model_validate(
             {
                 "sound_level": round(self.sound_level, 2),
@@ -245,7 +212,6 @@ class SoundLimiterEnv:
         band_db = 10.0 * np.log10(powers + 1e-9)
         self.band_levels_db = np.clip(band_db, 0.0, 100.0).astype(np.float32)
 
-        # Normalize rough room memory contribution to [0, 1].
         diff = max(0.0, self._room_tail_db - self.sound_level)
         self.reverb_energy = float(np.clip(diff / 40.0, 0.0, 1.0))
 
@@ -268,13 +234,12 @@ class SoundLimiterEnv:
 
     def _compute_reward(self) -> SoundReward:
         s = float(self.sound_level)
-        centre = (SAFE_MIN + SAFE_MAX) / 2.0  # 55.0 dB
-        half_band = (SAFE_MAX - SAFE_MIN) / 2.0  # 15.0 dB
+        centre = (SAFE_MIN + SAFE_MAX) / 2.0
+        half_band = (SAFE_MAX - SAFE_MIN) / 2.0
 
         if SAFE_MIN <= s <= SAFE_MAX:
             self.safe_streak += 1
 
-            # Favor center-of-band stability without introducing step bins.
             dist_to_centre = abs(s - centre)
             centre_bonus = max(0.0, 1.0 - (dist_to_centre / half_band))
             streak_bonus = min(0.20, self.safe_streak * 0.02)
@@ -291,7 +256,6 @@ class SoundLimiterEnv:
 
         self.safe_streak = 0
 
-        # Smooth penalty based on distance from the nearest safe boundary.
         if s < SAFE_MIN:
             boundary_distance = SAFE_MIN - s
             side = "below"
@@ -299,7 +263,7 @@ class SoundLimiterEnv:
         else:
             boundary_distance = s - SAFE_MAX
             side = "above"
-            side_multiplier = 1.15  # Excess loudness is riskier than undershoot.
+            side_multiplier = 1.15
 
         normalized = min(1.0, boundary_distance / 40.0)
         penalty = -0.20 - side_multiplier * (1.20 * normalized + 0.60 * (normalized ** 2))
@@ -315,7 +279,6 @@ class SoundLimiterEnv:
         )
 
     def render(self) -> str:
-        """ASCII render of the current state."""
         bar_len = int(self.sound_level / 2)
         bar = "#" * bar_len + "-" * (50 - bar_len)
         zone = "SAFE" if SAFE_MIN <= self.sound_level <= SAFE_MAX else "LOUD"

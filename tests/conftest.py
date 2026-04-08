@@ -1,5 +1,3 @@
-"""Pytest configuration for stable imports in local and CI runs."""
-
 from pathlib import Path
 import sys
 

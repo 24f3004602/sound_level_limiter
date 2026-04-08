@@ -1,35 +1,17 @@
-"""
-agent/q_agent.py
-Simple Q-Learning Agent — Baseline for local training/testing
-
-This trains a policy purely from environment interaction.
-It is NOT used in inference.py (which uses an LLM agent).
-It's here to: (a) verify the env works, (b) show learning progress,
-(c) provide a non-LLM baseline score for comparison.
-"""
-
-import numpy as np
-import pickle
 import os
+import pickle
 import sys
 from pathlib import Path
 
-# Allow running this file directly: python agent/q_agent.py
+import numpy as np
+
 if __package__ in (None, ""):
     project_root = Path(__file__).resolve().parents[1]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-from environment.sound_env import SoundLimiterEnv
 
 
 class QLearningAgent:
-    """
-    Tabular Q-Learning with discretized (sound_level, gain) states.
-
-    State space:  10 sound bins × 5 gain bins = 50 discrete states
-    Action space: 4 actions (do_nothing, warn, reduce_gain, mute)
-    """
-
     N_SOUND_BINS = 10
     N_GAIN_BINS  = 5
     N_ACTIONS    = 4
@@ -48,11 +30,9 @@ class QLearningAgent:
         self.epsilon_decay = epsilon_decay
         self.epsilon_min   = epsilon_min
 
-        # Q-table: shape [sound_bins, gain_bins, actions]
         self.q_table = np.zeros((self.N_SOUND_BINS, self.N_GAIN_BINS, self.N_ACTIONS))
 
     def _discretize(self, obs_dict: dict) -> tuple[int, int]:
-        """Map continuous observation to discrete (sound_bin, gain_bin)."""
         s = obs_dict.get("sound_level", 50.0)
         g = obs_dict.get("gain", 1.0)
         sound_bin = int(np.clip(s / 10, 0, self.N_SOUND_BINS - 1))
@@ -60,23 +40,18 @@ class QLearningAgent:
         return sound_bin, gain_bin
 
     def _stability_guard(self, obs_dict: dict, action: int) -> int:
-        """Keep policy robust against hard-task noise spikes and over-muting."""
         sl = float(obs_dict.get("sound_level", 60.0))
         gain = float(obs_dict.get("gain", 1.0))
 
-        # Never hard-mute unless absolutely necessary.
         if action == 3:
             action = 2 if (sl > 92 and gain > 0.25) else 1
 
-        # Keep gain from collapsing too low in easy/medium episodes.
         if sl < 42 and action in (1, 2, 3):
             return 0
 
-        # Avoid repeated reduce_gain when gain is already low.
         if gain < 0.20 and sl < 80 and action == 2:
             return 1 if sl > 70 else 0
 
-        # Emergency handling for loud spikes.
         if sl > 92:
             return 2 if gain > 0.20 else 1
         if sl > 78 and action in (0, 1):
@@ -87,7 +62,6 @@ class QLearningAgent:
         return action
 
     def choose_action(self, obs_dict: dict) -> int:
-        """Epsilon-greedy policy."""
         if np.random.random() < self.epsilon:
             return np.random.randint(self.N_ACTIONS)
         sb, gb = self._discretize(obs_dict)
@@ -102,7 +76,6 @@ class QLearningAgent:
         next_obs: dict,
         done:     bool,
     ) -> None:
-        """Bellman update."""
         sb,  gb  = self._discretize(obs)
         sb2, gb2 = self._discretize(next_obs)
 

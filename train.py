@@ -1,14 +1,3 @@
-"""
-train.py
-Train baseline agents on the Sound Limiter environment.
-
-Default behavior prefers a PyTorch DQN baseline and automatically falls back
-to tabular Q-learning when torch is unavailable.
-
-Run:
-  python train.py
-"""
-
 from __future__ import annotations
 
 import json
@@ -60,7 +49,6 @@ def _moving_average(values: list[float], window: int) -> list[float]:
 
 @contextmanager
 def _evaluation_mode(agent):
-    """Temporarily force deterministic action selection for evaluation."""
     previous_epsilon = getattr(agent, "epsilon", None)
     previous_policy_training = None
     previous_target_training = None
@@ -88,7 +76,6 @@ def _evaluation_mode(agent):
 
 
 def evaluate_agent(agent, n_episodes: int = 6, seed: int = 42) -> dict[str, Any]:
-    """Run deterministic evaluation across all registered tasks."""
     task_results = {}
 
     with _evaluation_mode(agent):
@@ -129,7 +116,6 @@ def train(
     seed: int = 42,
     algorithm: str = "auto",
 ):
-    """Train baseline model and return metrics-rich training artifacts."""
     np.random.seed(seed)
     rng = np.random.default_rng(seed)
 

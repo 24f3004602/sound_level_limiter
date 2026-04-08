@@ -1,9 +1,4 @@
 # pyright: reportMissingImports=false
-"""
-agent/dqn_agent.py
-PyTorch DQN baseline agent for the Sound Limiter environment.
-"""
-
 from __future__ import annotations
 
 import random
@@ -39,7 +34,6 @@ def torch_is_available() -> bool:
 
 
 def vectorize_observation(obs_dict: dict) -> np.ndarray:
-    """Convert env observation dict into a dense feature vector for DQN."""
     source_levels = obs_dict.get("source_levels", [0.0, 0.0, 0.0])
     if not isinstance(source_levels, list) or len(source_levels) != 3:
         source_levels = [0.0, 0.0, 0.0]

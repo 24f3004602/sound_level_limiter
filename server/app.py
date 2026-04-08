@@ -1,19 +1,9 @@
-"""
-server/app.py
-FastAPI server that exposes OpenEnv-compatible endpoints.
-
-Run locally:
-  python server.py
-  or
-  uvicorn server:app --host 0.0.0.0 --port 7860
-"""
-
 import json
 import logging
 import os
+import sys
 import threading
 import time
-import sys
 from collections import defaultdict, deque
 from pathlib import Path
 from typing import Optional
@@ -34,7 +24,6 @@ try:
 except ModuleNotFoundError as exc:
     if exc.name != "environment":
         raise
-    # Allow direct execution: python server/app.py
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(PROJECT_ROOT))
     from environment.sound_env import ACTION_MAP, SoundLimiterEnv, SoundObservation
@@ -65,8 +54,6 @@ def _resolve_session_id(request: Request) -> str:
 
 
 class EnvironmentStore:
-    """Thread-safe in-memory environment store keyed by session id."""
-
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._env_by_session: dict[str, SoundLimiterEnv] = {}
@@ -115,8 +102,6 @@ class EnvironmentStore:
 
 
 class RateLimiter:
-    """Simple fixed-window rate limiter keyed by client id."""
-
     def __init__(self, limit_per_minute: int) -> None:
         self.limit_per_minute = max(0, limit_per_minute)
         self.window_seconds = 60
@@ -143,8 +128,6 @@ class RateLimiter:
 
 
 class ApiMetrics:
-    """In-memory API call counters and latency aggregates."""
-
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._stats = defaultdict(lambda: {"count": 0, "errors": 0, "latency_ms_total": 0.0})
@@ -352,7 +335,6 @@ async def websocket_env(websocket: WebSocket):
     session_id = f"ws:{uuid4().hex}"
     _log_json(logger, event="ws_connect", session_id=session_id, client=client_key)
 
-    # Start each socket with a ready-to-train reset frame.
     initial_obs, initial_state = app.state.env_store.reset(session_id, ResetRequest())
     await websocket.send_json(
         {

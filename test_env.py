@@ -1,11 +1,3 @@
-"""
-test_env.py
-Quick sanity check script to run before submitting.
-Tests: environment, tasks, graders, and log format.
-
-Run: python test_env.py
-"""
-
 import json
 import sys
 
@@ -29,7 +21,6 @@ def test_environment() -> None:
         assert isinstance(done, bool)
         print(f"  step(action={action}) -> reward={reward.value:+.4f}, sound={obs2.sound_level:.1f} dB [PASS]")
 
-    # Smooth reward shaping should penalize farther-from-safe states more.
     env.sound_level = 71.0
     near_safe = env._compute_reward().value
     env.sound_level = 84.0
