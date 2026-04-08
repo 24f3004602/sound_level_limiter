@@ -72,6 +72,22 @@ Reply with one integer only:
 Prefer 1 or 2 above 70 dB and avoid 3 unless extreme."""
 
 
+def _format_field(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return str(value).replace(" ", "_")
+
+
+def _emit_block(tag: str, **fields) -> None:
+    serialized = " ".join(f"{key}={_format_field(val)}" for key, val in fields.items())
+    if serialized:
+        print(f"[{tag}] {serialized}", flush=True)
+    else:
+        print(f"[{tag}]", flush=True)
+
+
 def llm_choose_action(obs_dict: dict, step_num: int) -> int:
     """Ask the LLM to choose an action given the current observation."""
     global _consecutive_llm_errors, _use_heuristic_only
@@ -177,15 +193,13 @@ def run_task_inference(task: TaskConfig) -> dict:
 
     obs = env.reset(seed=42)
 
-    start_log = {
-        "type": "[START]",
-        "task_id": task.id,
-        "task":       task.name,
-        "difficulty": task.difficulty,
-        "model": MODEL_NAME,
-        "state": env.state(),
-    }
-    print(json.dumps(start_log), flush=True)
+    _emit_block(
+        "START",
+        task_id=task.id,
+        task=task.name,
+        difficulty=task.difficulty,
+        model=MODEL_NAME,
+    )
 
     total_reward = 0.0
     steps_in_safe = 0
@@ -201,34 +215,41 @@ def run_task_inference(task: TaskConfig) -> dict:
         if reward.in_safe_zone:
             steps_in_safe += 1
 
-        step_log = {
-            "type": "[STEP]",
-            "task_id": task.id,
-            "step": step_num,
-            "action": ACTION_MAP[action],
-            "action_id": action,
-            "sound_level": round(info["sound_level"], 2),
-            "gain": round(info["gain"], 3),
-            "reward":       round(reward.value, 4),
-            "in_safe_zone": reward.in_safe_zone,
-            "reward_reason": reward.reason,
-        }
-        print(json.dumps(step_log), flush=True)
+        _emit_block(
+            "STEP",
+            task_id=task.id,
+            step=step_num,
+            action=ACTION_MAP[action],
+            action_id=action,
+            sound_level=round(info["sound_level"], 2),
+            gain=round(info["gain"], 3),
+            reward=round(reward.value, 4),
+            in_safe_zone=reward.in_safe_zone,
+        )
 
     score = round(steps_in_safe / step_num, 4) if step_num > 0 else 0.0
 
     end_log = {
-        "type": "[END]",
         "task_id": task.id,
-        "task":         task.name,
-        "difficulty":   task.difficulty,
+        "task": task.name,
+        "difficulty": task.difficulty,
         "total_steps": step_num,
         "total_reward": round(total_reward, 4),
         "score": score,
         "reward": score,
         "passed": score >= task.success_threshold,
     }
-    print(json.dumps(end_log), flush=True)
+    _emit_block(
+        "END",
+        task_id=end_log["task_id"],
+        task=end_log["task"],
+        difficulty=end_log["difficulty"],
+        score=end_log["score"],
+        reward=end_log["reward"],
+        steps=end_log["total_steps"],
+        total_reward=end_log["total_reward"],
+        passed=end_log["passed"],
+    )
 
     _log_metric(
         metrics_logger,
