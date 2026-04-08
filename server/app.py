@@ -17,10 +17,11 @@ import sys
 from collections import defaultdict, deque
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 import openenv
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -29,7 +30,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 try:
     from environment.sound_env import ACTION_MAP, SoundLimiterEnv, SoundObservation
-    from environment.tasks import ALL_TASKS, TASKS_BY_ID, grade_task
+    from environment.tasks import TaskConfig, get_task, grade_task, list_tasks, register_task
 except ModuleNotFoundError as exc:
     if exc.name != "environment":
         raise
@@ -37,7 +38,7 @@ except ModuleNotFoundError as exc:
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(PROJECT_ROOT))
     from environment.sound_env import ACTION_MAP, SoundLimiterEnv, SoundObservation
-    from environment.tasks import ALL_TASKS, TASKS_BY_ID, grade_task
+    from environment.tasks import TaskConfig, get_task, grade_task, list_tasks, register_task
 
 
 load_dotenv(PROJECT_ROOT / ".env", override=False)
@@ -72,7 +73,7 @@ class EnvironmentStore:
 
     def _build_env(self, req: "ResetRequest") -> SoundLimiterEnv:
         if req.task_id:
-            task = TASKS_BY_ID.get(req.task_id)
+            task = get_task(req.task_id)
             if not task:
                 raise HTTPException(status_code=404, detail=f"Task '{req.task_id}' not found")
             return SoundLimiterEnv(
@@ -332,6 +333,135 @@ def step(req: StepRequest, request: Request):
     )
 
 
+@app.websocket("/ws")
+async def websocket_env(websocket: WebSocket):
+    if api_auth_token:
+        provided_key = websocket.headers.get("x-api-key", "")
+        if provided_key != api_auth_token:
+            await websocket.close(code=1008)
+            return
+
+    client_key = websocket.client.host if websocket.client and websocket.client.host else "unknown"
+    allowed, _ = app.state.rate_limiter.check(client_key)
+    if not allowed:
+        await websocket.close(code=1013)
+        return
+
+    await websocket.accept()
+
+    session_id = f"ws:{uuid4().hex}"
+    _log_json(logger, event="ws_connect", session_id=session_id, client=client_key)
+    await websocket.send_json(
+        {
+            "type": "connected",
+            "session_id": session_id,
+            "action_space": {
+                "type": "Discrete",
+                "n": 4,
+                "actions": ACTION_MAP,
+            },
+        }
+    )
+
+    try:
+        while True:
+            try:
+                payload = await websocket.receive_json()
+            except Exception:
+                await websocket.send_json(
+                    {"type": "error", "detail": "Invalid JSON payload"}
+                )
+                continue
+
+            msg_type = str(payload.get("type", "")).strip().lower()
+
+            if msg_type == "reset":
+                try:
+                    req = ResetRequest.model_validate(
+                        {
+                            "seed": payload.get("seed"),
+                            "task_id": payload.get("task_id"),
+                        }
+                    )
+                    obs, state = app.state.env_store.reset(session_id, req)
+                except HTTPException as exc:
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "status_code": exc.status_code,
+                            "detail": exc.detail,
+                        }
+                    )
+                    continue
+                except Exception as exc:
+                    await websocket.send_json(
+                        {"type": "error", "detail": f"Invalid reset payload: {exc}"}
+                    )
+                    continue
+
+                await websocket.send_json(
+                    {
+                        "type": "reset",
+                        "observation": obs.model_dump(),
+                        "state": state,
+                    }
+                )
+                continue
+
+            if msg_type == "step":
+                action = payload.get("action")
+                if action not in ACTION_MAP:
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "detail": f"Invalid action {action}. Must be 0-3: {ACTION_MAP}",
+                        }
+                    )
+                    continue
+
+                obs, reward, done, info, state = app.state.env_store.step(session_id, int(action))
+                await websocket.send_json(
+                    {
+                        "type": "step",
+                        "observation": obs.model_dump(),
+                        "reward": reward.value,
+                        "done": done,
+                        "terminated": info.get("terminated", False),
+                        "truncated": info.get("truncated", False),
+                        "info": {
+                            **info,
+                            "reward_reason": reward.reason,
+                            "in_safe_zone": reward.in_safe_zone,
+                        },
+                        "state": state,
+                    }
+                )
+                continue
+
+            if msg_type == "state":
+                await websocket.send_json(
+                    {
+                        "type": "state",
+                        "state": app.state.env_store.state(session_id),
+                    }
+                )
+                continue
+
+            if msg_type in ("close", "disconnect"):
+                await websocket.send_json({"type": "closed", "session_id": session_id})
+                await websocket.close(code=1000)
+                break
+
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "detail": "Unsupported message type. Use reset, step, state, or close.",
+                }
+            )
+    except WebSocketDisconnect:
+        _log_json(logger, event="ws_disconnect", session_id=session_id, client=client_key)
+
+
 @app.get("/state")
 def state(request: Request):
     session_id = _resolve_session_id(request)
@@ -347,9 +477,9 @@ def metrics():
 
 
 @app.get("/tasks")
-def list_tasks():
+def list_tasks_endpoint():
     return {
-        "tasks": [t.model_dump() for t in ALL_TASKS],
+        "tasks": [t.model_dump() for t in list_tasks()],
         "action_space": {
             "type": "Discrete",
             "n": 4,
@@ -358,9 +488,24 @@ def list_tasks():
     }
 
 
+@app.post("/tasks")
+def register_task_endpoint(task: TaskConfig, overwrite: bool = False):
+    existing = get_task(task.id)
+    try:
+        registered = register_task(task, overwrite=overwrite)
+    except ValueError as exc:
+        status_code = 409 if "already exists" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+    return {
+        "created": existing is None,
+        "task": registered.model_dump(),
+    }
+
+
 @app.get("/tasks/{task_id}")
-def get_task(task_id: str):
-    task = TASKS_BY_ID.get(task_id)
+def get_task_endpoint(task_id: str):
+    task = get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
     return task.model_dump()
@@ -368,7 +513,7 @@ def get_task(task_id: str):
 
 @app.post("/tasks/{task_id}/grade")
 def grade_task_endpoint(task_id: str, n_episodes: int = 5):
-    task = TASKS_BY_ID.get(task_id)
+    task = get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
 

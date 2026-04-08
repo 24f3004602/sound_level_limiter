@@ -26,6 +26,13 @@ classifiers = [
 [project.scripts]
 server = "server.app:main"
 
+[project.optional-dependencies]
+training = [
+  "numpy>=2.0.0",
+  "matplotlib>=3.8.0",
+  "torch>=2.3.0",
+]
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]

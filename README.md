@@ -19,7 +19,7 @@ An OpenEnv-compatible reinforcement learning environment where an agent manages 
 - `server.py`: compatibility launcher for local runs.
 - `environment/sound_env.py`: core environment dynamics.
 - `environment/tasks.py`: task definitions and graders.
-- `train.py`: Q-learning baseline training.
+- `train.py`: baseline training (PyTorch DQN by default, Q-learning fallback).
 - `inference.py`: submission-time inference script.
 - `scripts/validate-submission.sh`: Bash validator.
 - `scripts/validate-submission.ps1`: PowerShell validator.
@@ -59,7 +59,16 @@ uvicorn server:app --host 0.0.0.0 --port 7860
 python train.py
 ```
 
-This creates `q_table.pkl` and `training_progress.png`.
+Default mode trains a PyTorch DQN baseline and creates `dqn_model.pt`.
+
+To force tabular Q-learning:
+
+```powershell
+$env:BASELINE_ALGO = "q_table"
+python train.py
+```
+
+Training always writes `training_progress.png`.
 
 ## Run inference
 
@@ -121,6 +130,14 @@ If `openenv --version` fails, use:
 ```powershell
 openenv --help
 ```
+
+## Real-time and extensibility endpoints
+
+- `POST /tasks`: register or overwrite a custom task config at runtime.
+- `GET /tasks`: list all registered tasks (default + custom).
+- `GET /tasks/{task_id}`: inspect one task.
+- `POST /tasks/{task_id}/grade`: run grader for a given task.
+- `WS /ws`: low-overhead streaming endpoint for `reset`, `step`, and `state` messages.
 
 ## Security and rate limiting
 

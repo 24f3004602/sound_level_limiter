@@ -6,11 +6,10 @@ name:        sound-limiter-env
 version:     "1.0.0"
 description: >
   A meeting room sound level limiter environment.
-  The agent monitors simulated decibel levels and takes
-  actions (warn, reduce_gain, mute, do_nothing) to keep
-  sound within the safe zone of 40–70 dB.
-  Simulates real-world acoustic management systems used in
-  conference rooms, lecture halls, and event spaces.
+  The agent controls 3 independent sound sources with
+  frequency-aware dynamics and room reverberation carry-over,
+  using actions (warn, reduce_gain, mute, do_nothing) to keep
+  sound within the safe zone of 40-70 dB.
 
 author:      ASTARR
 license:     MIT
@@ -70,12 +69,13 @@ environment:
         effect: Hard mute — gain to 0, sound drops to ~10%
 
   reward:
-    range:       [-2.0, 1.0]
+    range:       [-2.0, 1.25]
     description: >
-      +1.0  if 40 ≤ sound_level ≤ 70 dB (safe zone)
-      -0.5  if 20 ≤ sound_level < 40 dB (over-muted)
-      -0.5  if 70 < sound_level ≤ 85 dB (slightly loud)
-      -2.0  if sound_level > 85 dB (dangerously loud)
+      Distance-shaped reward around a 55 dB center target:
+      reward scales smoothly with |sound_level - 55| to avoid
+      dead zones, applies stronger penalties near dangerous
+      extremes, and adds a meaningful consistency bonus for
+      sustained safe-zone control.
     partial_progress: true
     sparse:           false
 
@@ -127,7 +127,9 @@ endpoints:
   step:   POST /step
   state:  GET  /state
   tasks:  GET  /tasks
+  tasks_create: POST /tasks
   health: GET  /health
+  websocket: WS /ws
 
 inference:
   script:          inference.py

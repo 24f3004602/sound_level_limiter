@@ -4,7 +4,7 @@ import subprocess
 import sys
 
 from environment.sound_env import SoundLimiterEnv, SoundObservation, SoundReward
-from environment.tasks import ALL_TASKS, grade_all_tasks
+from environment.tasks import ALL_TASKS, TaskConfig, get_task, grade_all_tasks, register_task
 
 
 def test_pydantic_models() -> None:
@@ -34,8 +34,42 @@ def test_environment_reset_and_step() -> None:
         obs2, reward, done, _ = env.step(action)
         assert isinstance(obs2, SoundObservation)
         assert isinstance(reward, SoundReward)
-        assert reward.value in (-2.0, -0.5, 1.0)
+        assert -2.0 <= reward.value <= 1.25
+        assert len(obs2.source_levels) == 3
         assert isinstance(done, bool)
+
+
+def test_reward_shaping_has_gradient() -> None:
+    env = SoundLimiterEnv(seed=0)
+    env.safe_streak = 0
+
+    env.sound_level = 71.0
+    near_safe = env._compute_reward().value
+
+    env.sound_level = 84.0
+    far_from_safe = env._compute_reward().value
+
+    assert near_safe > far_from_safe
+
+
+def test_dynamic_task_registry_adds_task() -> None:
+    task = TaskConfig(
+        id="task_custom_registry_test",
+        name="Custom Registry Test",
+        description="Registry insertion test task",
+        difficulty="custom",
+        initial_sound=78.0,
+        noise_std=2.0,
+        max_steps=25,
+        success_threshold=0.55,
+    )
+
+    registered = register_task(task, overwrite=True)
+    assert registered.id == task.id
+
+    loaded = get_task(task.id)
+    assert loaded is not None
+    assert loaded.initial_sound == 78.0
 
 
 def test_tasks_and_grader_bounds() -> None:

@@ -17,6 +17,7 @@ jiter==0.13.0
 kiwisolver==1.5.0
 matplotlib==3.10.8
 numpy==2.4.4
+torch>=2.3.0
 openenv-core==0.2.3
 openai==2.30.0
 packaging==26.0
