@@ -57,5 +57,3 @@ temp/
 Thumbs.db
 .DS_Store
 
-# Local lockfile not required for pip-based deploy
-uv.lock
