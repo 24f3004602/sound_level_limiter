@@ -134,6 +134,7 @@ openenv --help
 ## Real-time and extensibility endpoints
 
 - `POST /tasks`: register or overwrite a custom task config at runtime.
+- `POST /tasks/register`: register a custom task (conflict-safe alias endpoint).
 - `GET /tasks`: list all registered tasks (default + custom).
 - `GET /tasks/{task_id}`: inspect one task.
 - `POST /tasks/{task_id}/grade`: run grader for a given task.

@@ -351,15 +351,15 @@ async def websocket_env(websocket: WebSocket):
 
     session_id = f"ws:{uuid4().hex}"
     _log_json(logger, event="ws_connect", session_id=session_id, client=client_key)
+
+    # Start each socket with a ready-to-train reset frame.
+    initial_obs, initial_state = app.state.env_store.reset(session_id, ResetRequest())
     await websocket.send_json(
         {
-            "type": "connected",
+            "type": "reset",
+            "observation": initial_obs.model_dump(),
+            "state": initial_state,
             "session_id": session_id,
-            "action_space": {
-                "type": "Discrete",
-                "n": 4,
-                "actions": ACTION_MAP,
-            },
         }
     )
 
@@ -374,6 +374,8 @@ async def websocket_env(websocket: WebSocket):
                 continue
 
             msg_type = str(payload.get("type", "")).strip().lower()
+            if not msg_type and "action" in payload:
+                msg_type = "step"
 
             if msg_type == "reset":
                 try:
@@ -436,6 +438,16 @@ async def websocket_env(websocket: WebSocket):
                         "state": state,
                     }
                 )
+
+                if done:
+                    obs_reset, state_reset = app.state.env_store.reset(session_id, ResetRequest())
+                    await websocket.send_json(
+                        {
+                            "type": "reset",
+                            "observation": obs_reset.model_dump(),
+                            "state": state_reset,
+                        }
+                    )
                 continue
 
             if msg_type == "state":
@@ -501,6 +513,18 @@ def register_task_endpoint(task: TaskConfig, overwrite: bool = False):
         "created": existing is None,
         "task": registered.model_dump(),
     }
+
+
+@app.post("/tasks/register")
+def register_task_alias_endpoint(task: TaskConfig):
+    try:
+        result = register_task(task, overwrite=False)
+        return {
+            "status": "registered",
+            "task": result.model_dump(),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/tasks/{task_id}")

@@ -15,6 +15,7 @@ def test_pydantic_models() -> None:
         above_safe=False,
         below_safe=False,
         loud_streak=0,
+        source_levels=[62.0, 64.0, 66.0],
     )
     assert obs.model_dump()["sound_level"] == 65.0
 

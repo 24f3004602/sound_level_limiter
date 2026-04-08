@@ -128,6 +128,7 @@ endpoints:
   state:  GET  /state
   tasks:  GET  /tasks
   tasks_create: POST /tasks
+  tasks_register: POST /tasks/register
   health: GET  /health
   websocket: WS /ws
 
