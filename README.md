@@ -24,6 +24,35 @@ An OpenEnv-compatible reinforcement learning environment where an agent manages 
 - `scripts/validate-submission.sh`: Bash validator.
 - `scripts/validate-submission.ps1`: PowerShell validator.
 
+## Design rationale
+
+- Safe zone is 40-70 dB because it balances speech intelligibility and listener comfort in small/medium meeting rooms.
+- The four-action set (`do_nothing`, `warn`, `reduce_gain`, `mute`) gives a realistic escalation ladder from low-cost nudges to hard intervention.
+- Task noise escalation (`noise_std`: 1.5 -> 4.0 -> 7.0) forces policies to generalize from calm to volatile acoustic conditions.
+- Episodes end early after sustained dangerous loudness (>95 dB for 3 consecutive steps) to model safety-critical control.
+
+## Architecture diagram
+
+```mermaid
+flowchart LR
+	A[Agent policy\ntrain.py / inference.py] --> B[SoundLimiterEnv\nenvironment/sound_env.py]
+	B --> C[Observation\nsound_level + control features]
+	C --> A
+	A --> D[Action id 0..3]
+	D --> B
+	B --> E[Reward shaping\nsmooth distance + streak bonus]
+	B --> F[Task graders\nenvironment/tasks.py]
+	F --> G[Per-task scores\neasy / medium / hard]
+	B --> H[FastAPI API\nserver/app.py]
+```
+
+## Reward design (implemented)
+
+- Inside the safe zone, reward is positive and includes a streak bonus for sustained control.
+- Outside the safe zone, penalty grows smoothly with distance from the nearest safe boundary.
+- Excess loudness is penalized more than undershoot to reflect higher practical risk.
+- Reward values are clipped to `[-2.0, 1.25]` for stable training and predictable grading.
+
 ## Setup
 
 ```powershell

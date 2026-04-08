@@ -91,6 +91,16 @@ _TASK_LOCK = threading.RLock()
 ALL_TASKS: list[TaskConfig] = [task.model_copy(deep=True) for task in DEFAULT_TASKS]
 TASKS_BY_ID: dict[str, TaskConfig] = {task.id: task for task in ALL_TASKS}
 
+DIFFICULTY_WEIGHTS: dict[str, float] = {
+    "easy": 1.0,
+    "medium": 1.35,
+    "hard": 1.70,
+}
+
+
+def _difficulty_weight(difficulty: str) -> float:
+    return DIFFICULTY_WEIGHTS.get(difficulty.strip().lower(), 1.20)
+
 
 def _normalize_task(task: TaskConfig) -> TaskConfig:
     normalized = task.model_copy(deep=True)
@@ -214,17 +224,26 @@ def grade_task(
 
     # Primary score is safe-zone occupancy.
     base_score = avg_safe
+    difficulty_weight = _difficulty_weight(task.difficulty)
 
-    # Consistency bonus scales with margin above threshold (up to +0.20).
-    margin = max(0.0, avg_safe - task.success_threshold)
-    consistency_bonus = min(0.20, 0.50 * margin)
+    # Margin above threshold earns a smooth bonus; misses incur a stronger
+    # difficulty-weighted penalty so hard-task failures count more.
+    margin = avg_safe - task.success_threshold
+    if margin >= 0.0:
+        consistency_bonus = min(0.25, (0.35 + 0.10 * (difficulty_weight - 1.0)) * margin)
+        miss_penalty = 0.0
+    else:
+        consistency_bonus = 0.0
+        miss_penalty = min(0.45, difficulty_weight * 0.90 * abs(margin))
 
-    final_score = float(np.clip(base_score + consistency_bonus, 0.0, 1.0))
+    final_score = float(np.clip(base_score + consistency_bonus - miss_penalty, 0.0, 1.0))
     passed = avg_safe >= task.success_threshold
 
     details = (
         f"Average safe-zone fraction: {avg_safe:.1%} (threshold: {task.success_threshold:.0%}). "
+        f"Difficulty weight: {difficulty_weight:.2f}. "
         f"Consistency bonus: +{consistency_bonus:.3f}. "
+        f"Miss penalty: -{miss_penalty:.3f}. "
         f"Average total reward: {avg_rew:.2f}. "
         f"{'PASSED' if passed else 'FAILED'}"
     )
@@ -246,14 +265,32 @@ def grade_task(
 def grade_all_tasks(agent_fn, n_episodes: int = 5) -> dict[str, GradeResult]:
     """Grade an agent on all currently registered tasks."""
     results: dict[str, GradeResult] = {}
+    weighted_scores: list[float] = []
+    weighted_passes: list[float] = []
+    total_weight = 0.0
+
     print("\nGrading all tasks...\n")
     for task in list_tasks():
         result = grade_task(task, agent_fn, n_episodes=n_episodes)
         results[task.id] = result
+        weight = _difficulty_weight(result.difficulty)
+        total_weight += weight
+        weighted_scores.append(result.score * weight)
+        weighted_passes.append((1.0 if result.passed else 0.0) * weight)
+
         status = "pass" if result.passed else "fail"
         print(
             f"  {status} [{result.difficulty.upper():6s}] {result.task_name:30s} "
             f"score={result.score:.4f}  safe={result.avg_safe_fraction:.1%}"
         )
+
+    if total_weight > 0.0:
+        weighted_overall_score = sum(weighted_scores) / total_weight
+        weighted_pass_rate = sum(weighted_passes) / total_weight
+        print(
+            f"  weighted_overall_score={weighted_overall_score:.4f} "
+            f"weighted_pass_rate={weighted_pass_rate:.1%}"
+        )
+
     print()
     return results

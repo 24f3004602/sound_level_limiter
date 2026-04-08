@@ -5,11 +5,11 @@
 name:        sound-limiter-env
 version:     "1.0.0"
 description: >
-  A meeting room sound level limiter environment.
-  The agent controls 3 independent sound sources with
-  frequency-aware dynamics and room reverberation carry-over,
-  using actions (warn, reduce_gain, mute, do_nothing) to keep
-  sound within the safe zone of 40-70 dB.
+  A meeting-room sound level limiter environment.
+  The agent selects one of four discrete interventions
+  (do_nothing, warn, reduce_gain, mute) to keep the observed
+  room sound level in the 40-70 dB safe zone under stochastic
+  drift and action-dependent attenuation.
 
 author:      ASTARR
 license:     MIT
@@ -71,11 +71,12 @@ environment:
   reward:
     range:       [-2.0, 1.25]
     description: >
-      Distance-shaped reward around a 55 dB center target:
-      reward scales smoothly with |sound_level - 55| to avoid
-      dead zones, applies stronger penalties near dangerous
-      extremes, and adds a meaningful consistency bonus for
-      sustained safe-zone control.
+      Smooth distance-shaped reward:
+      in-zone steps receive positive reward with a streak bonus,
+      while out-of-zone steps get progressively stronger penalties
+      based on distance from the nearest safe boundary.
+      Excess loudness is weighted more heavily than undershoot,
+      and final values are clipped to the declared reward range.
     partial_progress: true
     sparse:           false
 

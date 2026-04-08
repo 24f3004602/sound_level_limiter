@@ -85,7 +85,7 @@ class SoundLimiterEnv:
 
     State:   [sound_level, gain, step_count, above_safe, below_safe, loud_streak, source_levels]
     Actions: do_nothing (0), warn (1), reduce_gain (2), mute (3)
-    Reward:  shaped around 55 dB center with safe-streak bonus
+    Reward:  smooth distance-shaped around the safe band with safe-streak bonus
     Done:    after max_steps or 3 consecutive steps above 95 dB
     """
 
@@ -267,28 +267,50 @@ class SoundLimiterEnv:
         )
 
     def _compute_reward(self) -> SoundReward:
-        s = self.sound_level
+        s = float(self.sound_level)
         centre = (SAFE_MIN + SAFE_MAX) / 2.0  # 55.0 dB
+        half_band = (SAFE_MAX - SAFE_MIN) / 2.0  # 15.0 dB
 
         if SAFE_MIN <= s <= SAFE_MAX:
             self.safe_streak += 1
-            streak_bonus = min(0.2, self.safe_streak * 0.02)
+
+            # Favor center-of-band stability without introducing step bins.
+            dist_to_centre = abs(s - centre)
+            centre_bonus = max(0.0, 1.0 - (dist_to_centre / half_band))
+            streak_bonus = min(0.20, self.safe_streak * 0.02)
+            value = 0.95 + (0.10 * centre_bonus) + streak_bonus
+
             return SoundReward(
-                value=round(1.0 + streak_bonus, 4),
-                reason=f"In safe zone ({s:.1f} dB), streak={self.safe_streak}",
+                value=round(float(np.clip(value, -2.0, 1.25)), 4),
+                reason=(
+                    f"In safe zone ({s:.1f} dB), "
+                    f"center_bonus={centre_bonus:.2f}, streak={self.safe_streak}"
+                ),
                 in_safe_zone=True,
             )
 
         self.safe_streak = 0
-        # Proportional distance penalty gives gradient across full range.
-        distance = abs(s - centre) / (centre - SAFE_MIN)
-        penalty = -0.5 * distance
-        if s > 85.0:
-            penalty = -2.0  # hard danger penalty still applies
+
+        # Smooth penalty based on distance from the nearest safe boundary.
+        if s < SAFE_MIN:
+            boundary_distance = SAFE_MIN - s
+            side = "below"
+            side_multiplier = 1.0
+        else:
+            boundary_distance = s - SAFE_MAX
+            side = "above"
+            side_multiplier = 1.15  # Excess loudness is riskier than undershoot.
+
+        normalized = min(1.0, boundary_distance / 40.0)
+        penalty = -0.20 - side_multiplier * (1.20 * normalized + 0.60 * (normalized ** 2))
+        value = float(np.clip(penalty, -2.0, -0.05))
 
         return SoundReward(
-            value=round(penalty, 4),
-            reason=f"Outside safe range: {s:.1f} dB (distance={distance:.2f})",
+            value=round(value, 4),
+            reason=(
+                f"Outside safe range ({side}): {s:.1f} dB, "
+                f"distance={boundary_distance:.1f}, scaled={normalized:.2f}"
+            ),
             in_safe_zone=False,
         )
 
